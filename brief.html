@@ -616,9 +616,20 @@ const WX_URL='https://api.open-meteo.com/v1/forecast?latitude=44.65&longitude=-6
 /* =========================================================
    8. NEWS FEEDS
    ========================================================= */
-const GN = q => 'https://news.google.com/rss/search?q='+encodeURIComponent(q)+'&hl=en-CA&gl=CA&ceid=CA:en';
-const GN_TOP = 'https://news.google.com/rss?hl=en-CA&gl=CA&ceid=CA:en';
-const R2J = u => 'https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(u)+'&count=25';
+const R2J = u => 'https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(u);
+/* rss2json hands back "YYYY-MM-DD HH:MM:SS" in UTC, make it parseable everywhere */
+const normDate = s => (s && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) ? s.replace(' ','T')+'Z' : s;
+
+/* live publisher feeds, one per section, all CORS friendly through rss2json */
+const SRC = {
+  world:[['https://feeds.npr.org/1004/rss.xml','NPR World'],['https://feeds.bbci.co.uk/news/world/rss.xml','BBC World']],
+  leafs:[['https://theleafsnation.com/feed','The Leafs Nation']],
+  nhl:[['https://www.espn.com/espn/rss/nhl/news','ESPN NHL'],['https://thehockeywriters.com/feed/','The Hockey Writers']],
+  ai:[['https://techcrunch.com/category/artificial-intelligence/feed/','TechCrunch AI']],
+  hvac:[['https://www.achrnews.com/rss/articles','ACHR News']],
+  local:[['https://www.cbc.ca/webfeed/rss/rss-canada-novascotia','CBC Nova Scotia'],['https://www.halifaxexaminer.ca/feed/','Halifax Examiner']]
+};
+const HYPERLOCAL = /(tantallon|st\.? margaret|hubbards|peggys cove|peggy's cove|glen haven|seabright|head of st|black point|queensland|ingramport|french village)/i;
 
 const strip = h => {
   const t = document.createElement('div'); t.innerHTML = h||'';
@@ -635,14 +646,15 @@ const srcOf = it => {
 const cleanTitle = t => (t||'').replace(/\s-\s[^-]{2,40}$/,'').trim();
 const normKey = t => cleanTitle(t).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().slice(0,60);
 
-async function feed(url){
+async function feed(url, label){
   try{
     const r = await fetch(R2J(url));
     const j = await r.json();
-    if(!j || !j.items) return [];
-    return j.items.map(i=>({title:cleanTitle(i.title), link:i.link, pubDate:i.pubDate, desc:strip(i.description||i.content), source:srcOf(i)}));
+    if(!j || j.status !== 'ok' || !j.items) return [];
+    return j.items.map(i=>({title:cleanTitle(i.title), link:i.link, pubDate:normDate(i.pubDate), desc:strip(i.description||i.content), source:label||srcOf(i)}));
   }catch(e){ return []; }
 }
+const pull = async key => (await Promise.all(SRC[key].map(([u,l]) => feed(u,l)))).flat();
 
 /* curated fallback, every item carries a real date so the same filter applies */
 const CURATED = {
@@ -681,7 +693,7 @@ function render(el, items, window_, quietUnit, extras){
     if(!kt || seenT.has(kt) || seenL.has(kl)) continue;
     if(extras && extras.exclude && extras.exclude(it)) continue;
     seenT.add(kt); seenL.add(kl); out.push(it);
-    if(out.length>=4) break;
+    if(out.length >= ((extras && extras.max) || 4)) break;
   }
   if(!out.length){
     el.innerHTML = `<div class="quiet" style="grid-column:1/-1">Quiet. Nothing in the last ${quietUnit}.</div>`;
@@ -701,44 +713,49 @@ function render(el, items, window_, quietUnit, extras){
 const LEAFS_RE = /(maple leafs|\bleafs\b|toronto maple|matthews|marner|nylander|rielly|stolarz|treliving|scotiabank arena)/i;
 
 (async function news(){
-  const [w, lf, nh, ai, hv, lo1, lo2] = await Promise.all([
-    feed(GN_TOP),
-    feed(GN('"Toronto Maple Leafs"')),
-    feed(GN('NHL hockey')),
-    feed(GN('artificial intelligence AI')),
-    feed(GN('HVAC manufacturer OR "heat pump" acquisition OR merger')),
-    feed(GN('"St. Margaret\'s Bay" OR Tantallon OR Hubbards Nova Scotia')),
-    feed(GN('Halifax Regional Municipality HRM Nova Scotia'))
+  const [w, lf, nh, ai, hv, lo] = await Promise.all([
+    pull('world'), pull('leafs'), pull('nhl'), pull('ai'), pull('hvac'), pull('local')
   ]);
 
-  // WORLD
-  render(document.getElementById('sec-world'), (w.length?w:[]).concat(CURATED.world), 24, '24 hours');
+  // WORLD, top 3
+  const worldItems = w.concat(CURATED.world)
+    .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
+  render(document.getElementById('sec-world'), worldItems, 24, '24 hours', {max:3});
 
   // LEAFS
-  const leafsItems = (lf.length?lf:[]).concat(CURATED.leafs).filter(i=>LEAFS_RE.test(i.title+' '+(i.desc||'')));
+  const leafsItems = lf.concat(CURATED.leafs)
+    .filter(i=>LEAFS_RE.test(i.title+' '+(i.desc||'')))
+    .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
   const leafsShown = render(document.getElementById('sec-leafs'), leafsItems, 24, '24 hours');
   const leafKeys = new Set(leafsShown.map(i=>normKey(i.title)));
   const leafLinks = new Set(leafsShown.map(i=>(i.link||'').split('?')[0]));
 
   // NHL, league wide, Leafs stories excluded
-  const nhlItems = (nh.length?nh:[]).concat(CURATED.nhl);
+  const nhlItems = nh.concat(CURATED.nhl)
+    .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
   render(document.getElementById('sec-nhl'), nhlItems, 24, '24 hours', {
     exclude: it => LEAFS_RE.test(it.title+' '+(it.desc||'')) || leafKeys.has(normKey(it.title)) || leafLinks.has((it.link||'').split('?')[0])
   });
 
   // AI, 2 weeks, most recent first
-  const aiItems = (ai.length?ai:[]).concat(CURATED.ai)
+  const aiItems = ai.concat(CURATED.ai)
     .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
   render(document.getElementById('sec-ai'), aiItems, 336, '2 weeks');
 
   // HVAC, 2 weeks, no Innovair as a headline
-  const hvacItems = (hv.length?hv:[]).concat(CURATED.hvac)
+  const hvacItems = hv.concat(CURATED.hvac)
     .filter(i=>!/innovair/i.test(i.title))
     .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
   render(document.getElementById('sec-hvac'), hvacItems, 336, '2 weeks');
 
   // LOCAL, hyperlocal first then HRM
-  const localItems = (lo1.length?lo1:[]).concat(lo2.length?lo2:[]).concat(CURATED.local);
+  const localItems = lo.concat(CURATED.local)
+    .sort((a,b)=>{
+      const ha = HYPERLOCAL.test(a.title+' '+(a.desc||'')) ? 0 : 1;
+      const hb = HYPERLOCAL.test(b.title+' '+(b.desc||'')) ? 0 : 1;
+      if(ha !== hb) return ha - hb;
+      return Date.parse(b.pubDate||b.date) - Date.parse(a.pubDate||a.date);
+    });
   render(document.getElementById('sec-local'), localItems, 24, '24 hours');
 })();
 
