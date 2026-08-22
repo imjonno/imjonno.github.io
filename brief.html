@@ -646,15 +646,25 @@ const srcOf = it => {
 const cleanTitle = t => (t||'').replace(/\s-\s[^-]{2,40}$/,'').trim();
 const normKey = t => cleanTitle(t).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().slice(0,60);
 
+const wait = ms => new Promise(r=>setTimeout(r,ms));
 async function feed(url, label){
-  try{
-    const r = await fetch(R2J(url));
-    const j = await r.json();
-    if(!j || j.status !== 'ok' || !j.items) return [];
-    return j.items.map(i=>({title:cleanTitle(i.title), link:i.link, pubDate:normDate(i.pubDate), desc:strip(i.description||i.content), source:label||srcOf(i)}));
-  }catch(e){ return []; }
+  for(let attempt=0; attempt<3; attempt++){
+    try{
+      const j = await (await fetch(R2J(url))).json();
+      if(j && j.status === 'ok' && j.items){
+        return j.items.map(i=>({title:cleanTitle(i.title), link:i.link, pubDate:normDate(i.pubDate), desc:strip(i.description||i.content), source:label||srcOf(i)}));
+      }
+    }catch(e){ /* fall through to retry */ }
+    await wait(700 + attempt*600);
+  }
+  return [];
 }
-const pull = async key => (await Promise.all(SRC[key].map(([u,l]) => feed(u,l)))).flat();
+/* rss2json rate limits bursts, so fetch one feed at a time */
+async function pull(key){
+  const out = [];
+  for(const [u,l] of SRC[key]){ out.push(...await feed(u,l)); await wait(250); }
+  return out;
+}
 
 /* curated fallback, every item carries a real date so the same filter applies */
 const CURATED = {
@@ -713,16 +723,14 @@ function render(el, items, window_, quietUnit, extras){
 const LEAFS_RE = /(maple leafs|\bleafs\b|toronto maple|matthews|marner|nylander|rielly|stolarz|treliving|scotiabank arena)/i;
 
 (async function news(){
-  const [w, lf, nh, ai, hv, lo] = await Promise.all([
-    pull('world'), pull('leafs'), pull('nhl'), pull('ai'), pull('hvac'), pull('local')
-  ]);
-
   // WORLD, top 3
+  const w = await pull('world');
   const worldItems = w.concat(CURATED.world)
     .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
   render(document.getElementById('sec-world'), worldItems, 24, '24 hours', {max:3});
 
   // LEAFS
+  const lf = await pull('leafs');
   const leafsItems = lf.concat(CURATED.leafs)
     .filter(i=>LEAFS_RE.test(i.title+' '+(i.desc||'')))
     .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
@@ -731,6 +739,7 @@ const LEAFS_RE = /(maple leafs|\bleafs\b|toronto maple|matthews|marner|nylander|
   const leafLinks = new Set(leafsShown.map(i=>(i.link||'').split('?')[0]));
 
   // NHL, league wide, Leafs stories excluded
+  const nh = await pull('nhl');
   const nhlItems = nh.concat(CURATED.nhl)
     .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
   render(document.getElementById('sec-nhl'), nhlItems, 24, '24 hours', {
@@ -738,17 +747,20 @@ const LEAFS_RE = /(maple leafs|\bleafs\b|toronto maple|matthews|marner|nylander|
   });
 
   // AI, 2 weeks, most recent first
+  const ai = await pull('ai');
   const aiItems = ai.concat(CURATED.ai)
     .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
   render(document.getElementById('sec-ai'), aiItems, 336, '2 weeks');
 
   // HVAC, 2 weeks, no Innovair as a headline
+  const hv = await pull('hvac');
   const hvacItems = hv.concat(CURATED.hvac)
     .filter(i=>!/innovair/i.test(i.title))
     .sort((a,b)=>Date.parse(b.pubDate||b.date)-Date.parse(a.pubDate||a.date));
   render(document.getElementById('sec-hvac'), hvacItems, 336, '2 weeks');
 
   // LOCAL, hyperlocal first then HRM
+  const lo = await pull('local');
   const localItems = lo.concat(CURATED.local)
     .sort((a,b)=>{
       const ha = HYPERLOCAL.test(a.title+' '+(a.desc||'')) ? 0 : 1;
