@@ -770,7 +770,12 @@ async function fetchFeed(url){
       date: it.pubDate,
       pubDate: it.pubDate,
       source: src || 'Google News',
-      dek: stripHtml(it.description)
+      dek: (function(){
+        const raw = stripHtml(it.description);
+        // Google News often echoes the headline back as the description, so drop it
+        if (normTitle(raw).indexOf(normTitle(title)) === 0) return '';
+        return raw;
+      })()
     };
   });
 }
