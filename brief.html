@@ -332,12 +332,16 @@ const datelineText = new Intl.DateTimeFormat('en-CA', { weekday:'long', month:'l
 document.getElementById('dateline').textContent = datelineText + ' | Upper Tantallon, NS';
 
 /* ============ 2. RECENCY FILTER ============ */
-function hoursOld(pub){ const t = Date.parse(pub); return isNaN(t) ? Infinity : (Date.now() - t)/3600000; }
+function normDate(s){
+  if (typeof s === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) return s.replace(' ','T') + 'Z';
+  return s;
+}
+function hoursOld(pub){ const t = Date.parse(normDate(pub)); return isNaN(t) ? Infinity : (Date.now() - t)/3600000; }
 function fresh(items, maxHours){ return items.filter(i => hoursOld(i.pubDate || i.date) <= maxHours); }
 
 /* compact date format, "Aug 23" */
 function shortDate(s){
-  const t = Date.parse(s);
+  const t = Date.parse(normDate(s));
   if (isNaN(t)) return '';
   return new Intl.DateTimeFormat('en-CA',{month:'short',day:'numeric',timeZone:TZ}).format(new Date(t));
 }
@@ -672,7 +676,7 @@ const CURATED = {
       date:'2026-08-23T06:00:00-03:00', source:'Euronews',
       dek:'South African police detained two suspects in connection with the shooting of the former WBO bantamweight champion outside his home in Mdantsane, Eastern Cape.' },
     { title:'Seven killed in wrong way crash near Middlesbrough',
-      link:'https://www.euronews.com/video/2026/08/23/latest-news-bulletin-august-23rd-2026-morning',
+      link:'https://www.euronews.com/video/2026/08/23/latest-news-bulletin-august-23rd-2026-morning#middlesbrough',
       date:'2026-08-23T06:00:00-03:00', source:'Euronews',
       dek:'Two police officers were among the dead after a car travelling the wrong way collided with a police vehicle in northeast England.' },
     { title:'Iran says military doctrine is shifting from defensive to offensive',
@@ -727,7 +731,7 @@ const FEEDS = {
   leafs: 'https://news.google.com/rss/search?q=%22Toronto+Maple+Leafs%22+when:2d&hl=en-CA&gl=CA&ceid=CA:en',
   nhl:   'https://news.google.com/rss/search?q=NHL+hockey+when:2d&hl=en-CA&gl=CA&ceid=CA:en',
   ai:    'https://news.google.com/rss/search?q=(%22artificial+intelligence%22+OR+%22AI+agents%22)+when:14d&hl=en-CA&gl=CA&ceid=CA:en',
-  hvac:  'https://news.google.com/rss/search?q=(HVAC+manufacturer+OR+HVAC+acquisition+OR+%22heat+pump%22+manufacturer)+when:14d&hl=en-CA&gl=CA&ceid=CA:en',
+  hvac:  'https://news.google.com/rss/search?q=HVAC+acquisition+OR+HVAC+manufacturer+OR+HVAC+merger+when:14d&hl=en-CA&gl=CA&ceid=CA:en',
   local: 'https://news.google.com/rss/search?q=(Halifax+OR+%22Tantallon%22+OR+%22St.+Margarets+Bay%22+OR+HRM)+Nova+Scotia+when:2d&hl=en-CA&gl=CA&ceid=CA:en'
 };
 
@@ -750,7 +754,7 @@ function leafsy(s){
 }
 
 async function fetchFeed(url){
-  const api = 'https://api.rss2json.com/v1/api.json?count=25&rss_url=' + encodeURIComponent(url);
+  const api = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url);
   const r = await fetch(api);
   if (!r.ok) throw new Error('feed');
   const j = await r.json();
@@ -796,6 +800,9 @@ async function loadSection(sec){
   // recency filter, applied to feed and curated alike
   items = fresh(items, sec.win);
 
+  // Jonathan works at Innovair, so his own company never runs as a headline
+  if (sec.key === 'hvac') items = items.filter(s => !/innovair/i.test(s.title + ' ' + (s.dek||'')));
+
   // Leafs stories never appear in the league wide section
   if (sec.key === 'nhl') items = items.filter(s => !leafsy(s) && !claimedTitles.has(normTitle(s.title)) && !claimedLinks.has(s.link));
 
@@ -807,7 +814,7 @@ async function loadSection(sec){
     seenT.add(nt); seenL.add(s.link); out.push(s);
   }
 
-  out.sort((a,b) => Date.parse(b.date || b.pubDate) - Date.parse(a.date || a.pubDate));
+  out.sort((a,b) => Date.parse(normDate(b.date || b.pubDate)) - Date.parse(normDate(a.date || a.pubDate)));
 
   if (sec.key === 'leafs') out.forEach(s => { claimedTitles.add(normTitle(s.title)); claimedLinks.add(s.link); });
 
