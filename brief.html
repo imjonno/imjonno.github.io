@@ -536,7 +536,10 @@ function render(elId, items, quietLabel){
     const d = fmtDate(i.pubDate || i.date);
     const s = srcOf(i);
     const meta = [d, s].filter(Boolean).join('  &middot;  ');
-    const desc = trim(stripHtml(i.description || i.desc || ''), 190);
+    let desc = trim(stripHtml(i.description || i.desc || ''), 190);
+    // Google News feeds echo the headline back as the description. Drop it if so.
+    const nt = norm(cleanTitle(i.title)), nd = norm(desc);
+    if (nt && nd && (nd.indexOf(nt.slice(0,40)) === 0 || nt.indexOf(nd.slice(0,40)) === 0)) desc = '';
     return '<div class="story">'
       + '<a href="'+ (i.link||'#') +'" target="_blank" rel="noopener">'+ cleanTitle(i.title) +'</a>'
       + '<div class="meta">'+ meta +'</div>'
