@@ -550,11 +550,11 @@ const CURATED = {
   world: [
     { title:"Chinese humanoid robot runs 100 metres in 9.39 seconds in Beijing", link:"https://www.euronews.com/tag/world-news", source:"Euronews", date:"2026-08-23T12:00:00Z",
       description:"A humanoid robot clocked a 100 metre sprint faster than Usain Bolt's record pace at the World Humanoid Robot Games in Beijing." },
-    { title:"Seven killed in wrong-way crash near Middlesbrough, England", link:"https://www.euronews.com/tag/world-news", source:"Euronews", date:"2026-08-23T10:00:00Z",
+    { title:"Seven killed in wrong-way crash near Middlesbrough, England", link:"https://www.euronews.com/video/2026/08/23/latest-news-bulletin-august-23rd-2026-midday", source:"Euronews", date:"2026-08-23T10:00:00Z",
       description:"Two police officers were among seven people killed when a car travelling the wrong way collided with a police vehicle in northeast England." },
     { title:"Iran says military doctrine is shifting from defensive to offensive", link:"https://aa.com.tr/en/world/morning-briefing-aug-23-2026/4034881", source:"Anadolu Agency", date:"2026-08-23T07:00:00Z",
       description:"Tehran announced a change in posture, a signal likely to reshape regional security calculations and energy markets." },
-    { title:"Wildfire forces thousands to evacuate near Reno, Nevada", link:"https://www.euronews.com/tag/world-news", source:"Euronews", date:"2026-08-23T15:00:00Z",
+    { title:"Wildfire forces thousands to evacuate near Reno, Nevada", link:"https://www.euronews.com/video/2026/08/23/latest-news-bulletin-august-23rd-2026-evening", source:"Euronews", date:"2026-08-23T15:00:00Z",
       description:"Crews fought a fast moving fire approaching the city as neighbourhoods were cleared. A separate Baltic storm killed two and cut power to hundreds of thousands." }
   ],
   leafs: [],
@@ -569,7 +569,7 @@ const CURATED = {
   ai: [
     { title:"Google's A2A protocol joins the Agentic AI Foundation alongside MCP", link:"https://www.marketingprofs.com/opinions/2026/55655/ai-update-august-21-2026-ai-news-and-views-from-the-past-two-weeks", source:"MarketingProfs", date:"2026-08-20T14:00:00Z",
       description:"Takeaway for a GoHighLevel stack: agent-to-agent and MCP now sit under one neutral standards body, so the integration surface between your CRM, your automations and outside tools gets cheaper to build and less likely to break." },
-    { title:"OpenAI tests Private Safety Processing to preserve zero data retention", link:"https://www.marketingprofs.com/opinions/2026/55655/ai-update-august-21-2026-ai-news-and-views-from-the-past-two-weeks", source:"MarketingProfs", date:"2026-08-21T14:00:00Z",
+    { title:"OpenAI tests Private Safety Processing to preserve zero data retention", link:"https://aiagentstore.ai/ai-agent-news/this-week", source:"AI Agent Store", date:"2026-08-21T14:00:00Z",
       description:"Takeaway: contractor customer lists and homeowner records are the sensitive asset in a membership platform. Retention terms are becoming a real differentiator you can name in a sales conversation." },
     { title:"Grok 4.6 prices agentic workloads roughly 60 percent below rivals", link:"https://llm-stats.com/ai-news", source:"LLM Stats", date:"2026-08-21T09:00:00Z",
       description:"Takeaway: per-member automation cost is falling fast. The margin on a $45 per shop plus 15 percent model improves every quarter you do not have to raise price." },
@@ -580,16 +580,23 @@ const CURATED = {
   local: [
     { title:"Clam Harbour Beach Sandcastle Competition draws crowds for 45th year", link:"https://www.halifax.ca/home/news", source:"Halifax Regional Municipality", date:"2026-08-23T18:00:00Z",
       description:"HRM ran the 45th edition of the sandcastle competition on Sunday, with children, youth and adult categories on the beach." },
-    { title:"Halifax Transit service changes take effect, routes 330 and 415 adjusted", link:"https://www.halifax.ca/home/news", source:"Halifax Regional Municipality", date:"2026-08-24T04:00:00Z",
+    { title:"Halifax Transit service changes take effect, routes 330 and 415 adjusted", link:"https://www.halifax.ca/transportation/halifax-transit", source:"Halifax Regional Municipality", date:"2026-08-24T04:00:00Z",
       description:"Seasonal service changes begin today across the network, including adjustments to routes 330 and 415." }
   ]
 };
 
 /* ============ LIVE NEWS FEEDS ============ */
-const R2J = 'https://api.rss2json.com/v1/api.json?count=25&rss_url=';
+const R2J = 'https://api.rss2json.com/v1/api.json?rss_url=';
 const GN = 'https://news.google.com/rss';
 const GNQ = 'https://news.google.com/rss/search?q=';
 const GNT = '&hl=en-CA&gl=CA&ceid=CA:en';
+
+/* rss2json returns "YYYY-MM-DD HH:MM:SS" in UTC. Normalise so Date.parse does not treat it as local. */
+function utc(s){
+  if(!s) return s;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) return s.replace(' ','T') + 'Z';
+  return s;
+}
 
 async function feed(url){
   try{
@@ -598,7 +605,7 @@ async function feed(url){
     const j = await r.json();
     if(!j || !j.items) return [];
     return j.items.map(function(i){
-      return { title:i.title, link:i.link, pubDate:i.pubDate, description:i.description, source:null };
+      return { title:i.title, link:i.link, pubDate:utc(i.pubDate), description:i.description, source:null };
     });
   }catch(e){ return []; }
 }
