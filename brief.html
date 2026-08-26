@@ -638,7 +638,7 @@ const CURATED = {
       date:"2026-08-26T09:00:00-03:00", source:"Euronews",
       desc:"Tadej Pogacar took his second stage of the race with a long solo move through the Andorran mountains and now holds a commanding overall lead." },
     { title:"Alysa Liu will sit out the coming figure skating season",
-      link:"https://www.euronews.com/tag/top-stories",
+      link:"https://www.euronews.com/tag/news",
       date:"2026-08-26T08:30:00-03:00", source:"Euronews",
       desc:"Six months after her Winter Olympic gold, the American skater is stepping back rather than defending through a full competitive calendar." },
     { title:"Kennedy Center tells court the building would have to come down if the board does not get its way",
@@ -715,19 +715,33 @@ const FEEDS = {
           'https://news.google.com/rss/search?q=Halifax+OR+%22Halifax+Regional+Municipality%22&hl=en-CA&gl=CA&ceid=CA:en']
 };
 
-async function pullFeed(url){
-  try{
-    const r = await fetch('https://api.rss2json.com/v1/api.json?count=25&rss_url=' + encodeURIComponent(url));
-    const j = await r.json();
-    if (!j || j.status !== 'ok' || !Array.isArray(j.items)) return [];
-    return j.items.map(it => ({
-      title: (it.title||'').replace(/\s+-\s+[^-]{2,40}$/,'').trim(),
-      link: it.link || '',
-      pubDate: it.pubDate ? it.pubDate.replace(' ','T') + 'Z' : '',
-      desc: stripHtml(it.description || it.content || ''),
-      source: (it.author || (it.title||'').split(' - ').pop() || '').trim()
-    }));
-  }catch(e){ return []; }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function pullFeed(url, tries){
+  tries = tries || 3;
+  for (let a = 0; a < tries; a++){
+    try{
+      const r = await fetch('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url));
+      const j = await r.json();
+      if (j && j.status === 'ok' && Array.isArray(j.items)){
+        return j.items.map(it => {
+          const raw = it.title || '';
+          const title = raw.replace(/\s+-\s+[^-]{2,45}$/,'').trim();
+          let desc = stripHtml(it.description || it.content || '');
+          if (normTitle(desc).indexOf(normTitle(title)) === 0) desc = '';
+          return {
+            title: title,
+            link: it.link || '',
+            pubDate: it.pubDate ? it.pubDate.replace(' ','T') + 'Z' : '',
+            desc: desc,
+            source: (it.author || (raw.includes(' - ') ? raw.split(' - ').pop() : '') || '').trim()
+          };
+        });
+      }
+    }catch(e){ /* retry */ }
+    await sleep(1400);
+  }
+  return [];
 }
 
 function renderSection(id, items, windowHours, quietWord){
@@ -754,15 +768,14 @@ function renderSection(id, items, windowHours, quietWord){
 const LEAFY = /maple leafs|leafs|auston matthews|william nylander|mitch marner|scotiabank arena|gavin mckenna/i;
 
 async function loadNews(){
-  const [wFeed, lFeed, nFeed, aFeed, hFeed, loc1, loc2] = await Promise.all([
-    pullFeed(FEEDS.world[0]),
-    pullFeed(FEEDS.leafs[0]),
-    pullFeed(FEEDS.nhl[0]),
-    pullFeed(FEEDS.ai[0]),
-    pullFeed(FEEDS.hvac[0]),
-    pullFeed(FEEDS.local[0]),
-    pullFeed(FEEDS.local[1])
-  ]);
+  // rss2json rate limits bursts, so pull one feed at a time with a short gap
+  const wFeed = await pullFeed(FEEDS.world[0]); await sleep(600);
+  const lFeed = await pullFeed(FEEDS.leafs[0]); await sleep(600);
+  const nFeed = await pullFeed(FEEDS.nhl[0]);   await sleep(600);
+  const aFeed = await pullFeed(FEEDS.ai[0]);    await sleep(600);
+  const hFeed = await pullFeed(FEEDS.hvac[0]);  await sleep(600);
+  const loc1  = await pullFeed(FEEDS.local[0]); await sleep(600);
+  const loc2  = await pullFeed(FEEDS.local[1]);
 
   // World first so it claims its stories before the others dedupe against it
   const world = dedupe(fresh(wFeed.concat(CURATED.world), W24));
