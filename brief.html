@@ -739,7 +739,7 @@ async function pullFeed(url, tries){
         });
       }
     }catch(e){ /* retry */ }
-    await sleep(1400);
+    await sleep(900);
   }
   return [];
 }
@@ -768,31 +768,38 @@ function renderSection(id, items, windowHours, quietWord){
 const LEAFY = /maple leafs|leafs|auston matthews|william nylander|mitch marner|scotiabank arena|gavin mckenna/i;
 
 async function loadNews(){
-  // rss2json rate limits bursts, so pull one feed at a time with a short gap
-  const wFeed = await pullFeed(FEEDS.world[0]); await sleep(600);
-  const lFeed = await pullFeed(FEEDS.leafs[0]); await sleep(600);
-  const nFeed = await pullFeed(FEEDS.nhl[0]);   await sleep(600);
-  const aFeed = await pullFeed(FEEDS.ai[0]);    await sleep(600);
-  const hFeed = await pullFeed(FEEDS.hvac[0]);  await sleep(600);
-  const loc1  = await pullFeed(FEEDS.local[0]); await sleep(600);
-  const loc2  = await pullFeed(FEEDS.local[1]);
+  // rss2json throttles bursts, so stagger the starts but let them run in parallel
+  const stagger = (u, ms) => sleep(ms).then(() => pullFeed(u));
+  const pW = stagger(FEEDS.world[0], 0);
+  const pL = stagger(FEEDS.leafs[0], 300);
+  const pN = stagger(FEEDS.nhl[0], 600);
+  const pA = stagger(FEEDS.ai[0], 900);
+  const pH = stagger(FEEDS.hvac[0], 1200);
+  const p1 = stagger(FEEDS.local[0], 1500);
+  const p2 = stagger(FEEDS.local[1], 1800);
 
   // World first so it claims its stories before the others dedupe against it
+  const wFeed = await pW;
   const world = dedupe(fresh(wFeed.concat(CURATED.world), W24));
   renderSection('sec-world', world, W24, 'last 24 hours');
 
+  const lFeed = await pL;
   const leafs = dedupe(fresh(lFeed.concat(CURATED.leafs), W24));
   renderSection('sec-leafs', leafs, W24, 'last 24 hours');
 
+  const nFeed = await pN;
   const nhlRaw = fresh(nFeed.concat(CURATED.nhl), W24).filter(i => !LEAFY.test(i.title + ' ' + (i.desc||'')));
   renderSection('sec-nhl', dedupe(nhlRaw), W24, 'last 24 hours');
 
+  const aFeed = await pA;
   const ai = dedupe(fresh(aFeed.concat(CURATED.ai), W2W));
   renderSection('sec-ai', ai, W2W, 'last 2 weeks');
 
+  const hFeed = await pH;
   const hvacRaw = fresh(hFeed.concat(CURATED.hvac), W2W).filter(i => !/innovair/i.test(i.title||''));
   renderSection('sec-hvac', dedupe(hvacRaw), W2W, 'last 2 weeks');
 
+  const loc1 = await p1, loc2 = await p2;
   const hyper = fresh(loc1, W24);
   const hrm = fresh(loc2.concat(CURATED.local), W24);
   const localAll = dedupe(hyper.concat(hrm));
