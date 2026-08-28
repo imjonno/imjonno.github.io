@@ -697,11 +697,12 @@ function dedupe(items, scoped){
   const seen = new Set();
   for (const i of items){
     const k = normTitle(i.title);
-    const lk = (i.link||'').split('?')[0];
-    if (!k || seen.has(k) || seen.has(lk)) continue;
-    if (scoped && (seenGlobal.has(k) || seenGlobal.has(lk))) continue;
-    seen.add(k); seen.add(lk);
-    if (scoped){ seenGlobal.add(k); seenGlobal.add(lk); }
+    // Curated items can share a landing page, so they dedupe on headline only.
+    const lk = i.curated ? '' : (i.link||'').split('?')[0];
+    if (!k || seen.has(k) || (lk && seen.has(lk))) continue;
+    if (scoped && (seenGlobal.has(k) || (lk && seenGlobal.has(lk)))) continue;
+    seen.add(k); if (lk) seen.add(lk);
+    if (scoped){ seenGlobal.add(k); if (lk) seenGlobal.add(lk); }
     out.push(i);
   }
   return out;
@@ -779,7 +780,7 @@ const LEAF_RE = /(maple leafs|leafs|scotiabank arena)/i;
 async function loadSection(elId, feedUrl, hours, quietLabel, curated, opts){
   opts = opts || {};
   let items = await rss(feedUrl);
-  items = items.concat(curated || []);
+  items = items.concat((curated || []).map(function(c){ var o = Object.assign({}, c); o.curated = true; return o; }));
   if (opts.exclude) items = items.filter(i => !opts.exclude.test(i.title + ' ' + (i.description||'')));
   if (opts.require) items = items.filter(i => opts.require.test(i.title + ' ' + (i.description||'')));
   items = fresh(items, hours);
