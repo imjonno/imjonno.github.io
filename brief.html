@@ -681,9 +681,15 @@ async function loadNews(){
   /* --- AI --- */
   (async () => {
     let a = await feed(gnews('"artificial intelligence" OR "AI agents" OR OpenAI OR Anthropic','14d'));
-    a = fresh(a.concat(CURATED.ai), H2W);
+    a = fresh(a, H2W);
     a.sort((x,y) => Date.parse(y.pubDate||y.date) - Date.parse(x.pubDate||x.date));
-    a = dedupe(a, new Set()).slice(0,4);
+    const seenA = new Set();
+    a = dedupe(a, seenA).slice(0,3);
+    /* keep one slot for the curated item that carries the Mainstay takeaway */
+    let cur = fresh(CURATED.ai, H2W);
+    cur.sort((x,y) => Date.parse(y.date) - Date.parse(x.date));
+    cur = dedupe(cur, seenA).slice(0,1);
+    a = a.concat(cur);
     renderStories('f-ai', a, QUIET2W);
   })();
 
