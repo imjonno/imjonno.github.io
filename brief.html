@@ -564,10 +564,14 @@ function renderStories(elId, items, quietText, subheads){
     }
     const when = fmtShort(new Date(it.pubDate || it.date));
     const src = srcOf(it);
+    /* Google News descriptions often just repeat the headline. Drop those. */
+    const d = it.desc || '';
+    const nd = normTitle(d), nt = normTitle(it.title);
+    const showDesc = d && nt && nd.indexOf(nt) !== 0 && nd !== nt && d.length > it.title.length + 25;
     html += '<div class="story">'
       + '<div class="meta">'+esc(when)+(src ? ' &middot; '+esc(src) : '')+'</div>'
       + '<h3><a href="'+esc(it.link)+'" target="_blank" rel="noopener">'+esc(it.title)+'</a></h3>'
-      + '<p>'+esc(it.desc || '')+'</p>'
+      + (showDesc ? '<p>'+esc(d)+'</p>' : '')
       + '</div>';
   });
   el.innerHTML = html;
