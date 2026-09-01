@@ -574,35 +574,49 @@ function renderStories(elId, items, quietText, subheads){
 }
 
 /* Google News RSS through rss2json */
+function j2(u){ return 'https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(u); }
 function gnews(q, when){
-  const u = 'https://news.google.com/rss/search?q='+encodeURIComponent(q+' when:'+when)+'&hl=en-CA&gl=CA&ceid=CA:en';
-  return 'https://api.rss2json.com/v1/api.json?count=30&rss_url='+encodeURIComponent(u);
+  return j2('https://news.google.com/rss/search?q='+encodeURIComponent(q+' when:'+when)+'&hl=en-CA&gl=CA&ceid=CA:en');
 }
+function gtop(){ return j2('https://news.google.com/rss?hl=en-CA&gl=CA&ceid=CA:en'); }
 function gtopic(topic){
-  const u = 'https://news.google.com/rss/headlines/section/topic/'+topic+'?hl=en-CA&gl=CA&ceid=CA:en';
-  return 'https://api.rss2json.com/v1/api.json?count=30&rss_url='+encodeURIComponent(u);
+  return j2('https://news.google.com/rss/headlines/section/topic/'+topic+'?hl=en-CA&gl=CA&ceid=CA:en');
 }
-async function feed(url){
-  try{
-    const r = await fetch(url, {cache:'no-store'});
-    if(!r.ok) return [];
-    const j = await r.json();
-    if(!j || !j.items) return [];
-    return j.items.map(i => {
-      let title = (i.title||'').replace(/\s+-\s+[^-]+$/,'').trim();
-      let source = '';
-      const m = (i.title||'').match(/\s+-\s+([^-]+)$/);
-      if(m) source = m[1].trim();
-      if(!source && i.author) source = i.author;
-      return {
-        title: title || i.title,
-        link: i.link,
-        pubDate: i.pubDate,
-        desc: stripHtml(i.description || i.content || ''),
-        source: source
-      };
-    }).filter(i => i.title && i.link);
-  }catch(e){ return []; }
+/* rss2json returns "YYYY-MM-DD HH:MM:SS" in UTC. Make it parseable as UTC. */
+function normDate(s){
+  if(!s) return s;
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})$/.exec(String(s).trim());
+  return m ? m[1]+'T'+m[2]+'Z' : s;
+}
+async function feed(url, tries){
+  tries = tries || 3;
+  for(let n=0; n<tries; n++){
+    try{
+      const r = await fetch(url, {cache:'no-store'});
+      if(r.ok){
+        const j = await r.json();
+        if(j && j.status === 'ok' && j.items && j.items.length){
+          return j.items.map(i => {
+            let title = (i.title||'').replace(/\s+-\s+[^-]+$/,'').trim();
+            let source = '';
+            const m = (i.title||'').match(/\s+-\s+([^-]+)$/);
+            if(m) source = m[1].trim();
+            if(!source && i.author) source = i.author;
+            return {
+              title: title || i.title,
+              link: i.link,
+              pubDate: normDate(i.pubDate),
+              desc: stripHtml(i.description || i.content || ''),
+              source: source
+            };
+          }).filter(i => i.title && i.link);
+        }
+        if(j && j.status === 'ok') return [];
+      }
+    }catch(e){}
+    if(n < tries-1) await new Promise(res => setTimeout(res, 1400*(n+1)));
+  }
+  return [];
 }
 
 /* ============================================================
@@ -644,8 +658,8 @@ async function loadNews(){
 
   /* --- WORLD : top 3 --- */
   (async () => {
-    let items = await feed(gtopic('WORLD'));
-    if(!items.length) items = await feed(gnews('world news','1d'));
+    let items = await feed(gtop());
+    if(!items.length) items = await feed(gtopic('WORLD'));
     items = fresh(items.concat(CURATED.world), H24);
     items = dedupe(items, new Set()).slice(0,3);
     renderStories('f-world', items, QUIET24);
